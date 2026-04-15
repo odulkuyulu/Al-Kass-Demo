@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Al Kass TV — Live Translation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- ─── HEADER ─── -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="24" cy="24" r="22" stroke="#C9A84C" stroke-width="2.5"/>
+                        <text x="24" y="30" text-anchor="middle" fill="#C9A84C"
+                              font-family="'Noto Sans Arabic', sans-serif" font-size="18" font-weight="700">الكأس</text>
+                    </svg>
+                </div>
+                <div class="logo-text">
+                    <span class="logo-primary">AL KASS</span>
+                    <span class="logo-sub">LIVE TRANSLATION</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="status-badge" id="statusBadge">
+                <span class="status-dot"></span>
+                <span class="status-text">Offline</span>
+            </div>
+            <div class="latency-display" id="latencyDisplay">
+                <span class="latency-label">Latency</span>
+                <span class="latency-value" id="latencyValue">—</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ─── MAIN CONTENT ─── -->
+    <main class="main">
+        <!-- Caption Display Area -->
+        <section class="caption-area">
+            <div class="caption-container">
+                <!-- Source language caption -->
+                <div class="caption-block source-block">
+                    <div class="caption-label">
+                        <span class="lang-flag" id="sourceLangFlag">🇶🇦</span>
+                        <span id="sourceLangLabel">Arabic — Source</span>
+                    </div>
+                    <div class="caption-text" id="sourceText" dir="rtl">
+                        <span class="placeholder">Waiting for audio input...</span>
+                    </div>
+                </div>
+
+                <!-- Divider -->
+                <div class="caption-divider">
+                    <div class="divider-line"></div>
+                    <div class="divider-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 4L12 20M12 20L6 14M12 20L18 14" stroke="#C9A84C" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <div class="divider-line"></div>
+                </div>
+
+                <!-- Target language caption -->
+                <div class="caption-block target-block">
+                    <div class="caption-label">
+                        <span class="lang-flag" id="targetLangFlag">🇬🇧</span>
+                        <span id="targetLangLabel">English — Translation</span>
+                    </div>
+                    <div class="caption-text translated" id="targetText" dir="ltr">
+                        <span class="placeholder">Translation will appear here...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Caption history -->
+            <div class="history-container" id="historyContainer">
+                <div class="history-header">
+                    <span>Caption History</span>
+                    <button class="btn-clear" id="clearHistory">Clear</button>
+                </div>
+                <div class="history-list" id="historyList"></div>
+            </div>
+        </section>
+
+        <!-- Control Panel -->
+        <aside class="control-panel">
+            <h2 class="panel-title">Controls</h2>
+
+            <!-- Direction Toggle -->
+            <div class="control-group">
+                <label class="control-label">Translation Direction</label>
+                <div class="direction-toggle" id="directionToggle">
+                    <button class="dir-btn active" data-direction="ar-to-en">
+                        <span class="dir-from">العربية</span>
+                        <span class="dir-arrow">→</span>
+                        <span class="dir-to">English</span>
+                    </button>
+                    <button class="dir-btn" data-direction="en-to-ar">
+                        <span class="dir-from">English</span>
+                        <span class="dir-arrow">→</span>
+                        <span class="dir-to">العربية</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Environment -->
+            <div class="control-group">
+                <label class="control-label">Environment</label>
+                <select class="control-select" id="envSelect">
+                    <option value="demo" selected>Demo</option>
+                    <option value="poc">Proof of Concept</option>
+                    <option value="production">Production</option>
+                </select>
+            </div>
+
+            <!-- Start/Stop Buttons -->
+            <div class="control-group">
+                <button class="btn btn-start" id="btnStart">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    Start Translation
+                </button>
+                <button class="btn btn-stop" id="btnStop" disabled>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="6" y="6" width="12" height="12" rx="1"/>
+                    </svg>
+                    Stop Translation
+                </button>
+            </div>
+
+            <!-- Stats -->
+            <div class="control-group stats-group">
+                <div class="stat-item">
+                    <span class="stat-label">Segments</span>
+                    <span class="stat-value" id="segmentCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Avg Latency</span>
+                    <span class="stat-value" id="avgLatency">—</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Session</span>
+                    <span class="stat-value" id="sessionTime">00:00</span>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- ─── FOOTER ─── -->
+    <footer class="footer">
+        <span>Al Kass TV Translation Platform</span>
+        <span class="footer-sep">·</span>
+        <span>Powered by Azure AI</span>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

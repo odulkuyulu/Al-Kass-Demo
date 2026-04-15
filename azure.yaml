@@ -1,0 +1,10 @@
+name: alkass-translation
+metadata:
+  template: alkass-translation@0.0.1
+services:
+  web:
+    project: .
+    host: containerapp
+    language: python
+    docker:
+      path: ./Dockerfile

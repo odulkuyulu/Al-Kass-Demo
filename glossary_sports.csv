@@ -1,0 +1,49 @@
+# Alkass TV Translation Platform — Sample Glossary
+# Format: arabic_term,english_term
+# Lines starting with # are comments.
+#
+# Sports-specific terms for Qatar/Gulf football broadcasting.
+# This glossary is applied as post-processing after machine translation
+# to ensure consistent, broadcast-quality terminology.
+#
+# Add new terms as needed. The system applies case-insensitive matching.
+#
+# ── Football / Soccer ──
+ركلة جزاء,penalty kick
+ضربة حرة,free kick
+هاتريك,hat-trick
+تسلل,offside
+بطاقة صفراء,yellow card
+بطاقة حمراء,red card
+ركلة ركنية,corner kick
+رمية تماس,throw-in
+ركلات الترجيح,penalty shootout
+الشوط الأول,first half
+الشوط الثاني,second half
+الوقت الإضافي,extra time
+الوقت بدل الضائع,stoppage time
+حارس المرمى,goalkeeper
+المهاجم,striker
+خط الوسط,midfield
+الدفاع,defence
+المدرب,coach
+الحكم,referee
+# ── Tournaments ──
+كأس العالم,FIFA World Cup
+دوري أبطال آسيا,AFC Champions League
+الدوري القطري,Qatar Stars League
+كأس الأمير,Amir Cup
+كأس آسيا,AFC Asian Cup
+# ── Teams (Qatar) ──
+الدحيل,Al Duhail
+السد,Al Sadd
+الريان,Al Rayyan
+الغرافة,Al Gharafa
+الأهلي,Al Ahli
+العربي,Al Arabi
+# ── General Broadcast ──
+البث المباشر,live broadcast
+التعليق,commentary
+المحلل,analyst
+الاستوديو,studio
+إعادة,replay
