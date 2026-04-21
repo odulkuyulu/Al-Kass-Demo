@@ -123,19 +123,29 @@ class RealTimeTranslationPipeline:
             # Entra ID: obtain a token and use the custom endpoint
             # Speech SDK requires setting auth_token AFTER creating config
             # with endpoint, not in the constructor.
-            from azure.identity import DefaultAzureCredential
-            credential = DefaultAzureCredential()
+            from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+            import os
+            client_id = os.environ.get("AZURE_CLIENT_ID", "")
+            if client_id:
+                credential = ManagedIdentityCredential(client_id=client_id)
+            else:
+                credential = DefaultAzureCredential()
             token = credential.get_token(
                 "https://cognitiveservices.azure.com/.default"
             )
             endpoint = self._config.speech.endpoint
+            region = self._config.speech.region
+            resource_id = self._config.speech.resource_id
             self._logger.log_info(
                 f"Using Entra ID token auth, endpoint={endpoint}"
             )
+            # For Entra ID auth with Speech SDK, we need to prefix the token
+            # with the resource ID so the service knows which resource to auth against.
+            aad_token = f"aad#{resource_id}#{token.token}"
             speech_config = speechsdk.SpeechConfig(
-                endpoint=endpoint,
+                auth_token=aad_token,
+                region=region,
             )
-            speech_config.authorization_token = token.token
         speech_config.speech_recognition_language = self._source_locale
         speech_config.set_profanity(
             speechsdk.ProfanityOption.Raw

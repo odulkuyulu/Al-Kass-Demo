@@ -77,7 +77,7 @@ class AzureSpeechConfig:
 class AzureTranslatorConfig:
     """Azure Translator API configuration."""
     subscription_key: str = ""
-    region: str = "qatarcentral"
+    region: str = ""
     # Global endpoint (used with key auth)
     endpoint: str = "https://api.cognitive.microsofttranslator.com"
     # Custom domain endpoint for Entra ID auth
@@ -88,7 +88,7 @@ class AzureTranslatorConfig:
         if not self.subscription_key:
             self.subscription_key = os.environ.get("AZURE_TRANSLATOR_KEY", "")
         if not self.region:
-            self.region = os.environ.get("AZURE_TRANSLATOR_REGION", "qatarcentral")
+            self.region = os.environ.get("AZURE_TRANSLATOR_REGION", "westeurope")
         if not self.custom_endpoint:
             self.custom_endpoint = os.environ.get("AZURE_TRANSLATOR_ENDPOINT", "")
 

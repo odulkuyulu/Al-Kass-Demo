@@ -66,7 +66,20 @@
         const tgtLang = data.target_language || "en";
         const isFinal = data.type === "final";
 
-        // Update current caption
+        // If stream transcription is active, render in stream panel
+        if (streamTranscribing) {
+            setStreamCaption(streamSourceText, data.source_text, isFinal, false, srcLang);
+            setStreamCaption(streamTargetText, data.translated_text, isFinal, true, tgtLang);
+            if (data.latency_ms != null && streamLatency) {
+                streamLatency.textContent = Math.round(data.latency_ms) + " ms";
+            }
+            if (isFinal && data.source_text) {
+                pushStreamHistory(data, srcLang, tgtLang);
+            }
+            return;
+        }
+
+        // Update current caption (Translation tab)
         setCaption(sourceText, data.source_text, isFinal, false, srcLang);
         setCaption(targetText, data.translated_text, isFinal, true, tgtLang);
 
@@ -342,5 +355,343 @@
 
     // ─── Init ───────────────────────────────────────────
     setRunning(false);
+
+    // ═══════════════════════════════════════════════════════
+    //  TAB SWITCHING
+    // ═══════════════════════════════════════════════════════
+    var tabBtns = document.querySelectorAll(".tab-btn");
+    var tabPanels = document.querySelectorAll(".tab-panel");
+
+    tabBtns.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            tabBtns.forEach(function (b) { b.classList.remove("active"); });
+            tabPanels.forEach(function (p) { p.classList.remove("active"); });
+            btn.classList.add("active");
+            var panel = document.getElementById("panel-" + btn.dataset.tab);
+            if (panel) panel.classList.add("active");
+        });
+    });
+
+    // ═══════════════════════════════════════════════════════
+    //  LIVE STREAMS TAB
+    // ═══════════════════════════════════════════════════════
+    var channelList        = document.getElementById("channelList");
+    var videoPlaceholder   = document.getElementById("videoPlaceholder");
+    var streamPlayer       = document.getElementById("streamPlayer");
+    var streamChannelName  = document.getElementById("streamChannelName");
+    var streamStatusBadge  = document.getElementById("streamStatusBadge");
+    var streamStatusText   = streamStatusBadge ? streamStatusBadge.querySelector(".status-text") : null;
+    var streamSourceText   = document.getElementById("streamSourceText");
+    var streamTargetText   = document.getElementById("streamTargetText");
+    var streamLatency      = document.getElementById("streamLatency");
+    var streamSrcFlag      = document.getElementById("streamSrcFlag");
+    var streamTgtFlag      = document.getElementById("streamTgtFlag");
+    var btnStartTranscribe = document.getElementById("btnStartTranscribe");
+    var btnStopTranscribe  = document.getElementById("btnStopTranscribe");
+    var clearStreamHistory = document.getElementById("clearStreamHistory");
+    var streamHistoryList  = document.getElementById("streamHistoryList");
+    var streamDirBtns      = document.querySelectorAll("#streamDirectionToggle .dir-btn");
+
+    var activeChannel      = null;
+    var hlsPlayer          = null;
+    var streamDirection    = "ar-to-en";
+    var streamTranscribing = false;
+
+    // ─── Load channels ──────────────────────────────────
+    function loadChannels() {
+        fetch("/api/channels")
+            .then(function (r) { return r.json(); })
+            .then(function (channels) {
+                channelList.innerHTML = "";
+                channels.forEach(function (ch) {
+                    var item = document.createElement("div");
+                    item.className = "channel-item";
+                    item.dataset.slug = ch.slug;
+                    item.innerHTML =
+                        '<span class="channel-dot"></span>' +
+                        '<span class="channel-name">' + ch.name + '</span>';
+                    item.addEventListener("click", function () {
+                        selectChannel(ch, item);
+                    });
+                    channelList.appendChild(item);
+                });
+            })
+            .catch(function (err) {
+                console.error("[Channels] Failed to load:", err);
+            });
+    }
+
+    // ─── Select channel ─────────────────────────────────
+    function selectChannel(ch, el) {
+        // Stop current transcription if running
+        if (streamTranscribing) {
+            stopStreamTranscription();
+        }
+
+        // Update active state
+        document.querySelectorAll(".channel-item").forEach(function (c) {
+            c.classList.remove("active");
+        });
+        el.classList.add("active");
+        activeChannel = ch;
+        streamChannelName.textContent = ch.name;
+
+        // Open stream in popup window (avoids third-party cookie restrictions)
+        openStreamPopup(ch.iframe_url, ch.name);
+    }
+
+    // ─── Popup Stream Player ────────────────────────────
+    var streamActiveMsg = document.getElementById("streamActiveMsg");
+    var activeChannelLabel = document.getElementById("activeChannelLabel");
+    var btnReopenStream = document.getElementById("btnReopenStream");
+    var streamPopup = null;
+
+    function openStreamPopup(url, channelName) {
+        // Close existing popup
+        if (streamPopup && !streamPopup.closed) {
+            streamPopup.close();
+        }
+
+        // Hide placeholder, show active message
+        videoPlaceholder.classList.add("hidden");
+        streamPlayer.style.display = "none";
+        streamActiveMsg.style.display = "block";
+        activeChannelLabel.textContent = channelName;
+
+        // Open popup window
+        var w = 800, h = 500;
+        var left = (screen.width - w) / 2;
+        var top = (screen.height - h) / 2;
+        streamPopup = window.open(
+            url,
+            "alkass_stream",
+            "width=" + w + ",height=" + h + ",left=" + left + ",top=" + top + ",resizable=yes,scrollbars=no"
+        );
+    }
+
+    if (btnReopenStream) {
+        btnReopenStream.addEventListener("click", function () {
+            if (activeChannel) {
+                openStreamPopup(activeChannel.iframe_url, activeChannel.name);
+            }
+        });
+    }
+
+    // ─── Stream transcription controls ──────────────────
+    btnStartTranscribe.addEventListener("click", function () {
+        if (!activeChannel || streamTranscribing) return;
+        startStreamTranscription();
+    });
+
+    btnStopTranscribe.addEventListener("click", function () {
+        if (!streamTranscribing) return;
+        stopStreamTranscription();
+    });
+
+    // ─── Stream audio capture state ────────────────────
+    var streamAudioContext = null;
+    var streamMediaStream = null;
+    var streamScriptNode = null;
+
+    async function startStreamAudioCapture() {
+        try {
+            streamMediaStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    channelCount: 1,
+                    sampleRate: TARGET_SAMPLE_RATE,
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                }
+            });
+        } catch (err) {
+            console.error("[StreamAudio] Microphone access denied:", err);
+            alert("Microphone access is required for live translation.\nPlease allow microphone access and try again.\n\nTip: Play the stream through speakers (not headphones) so the mic can pick up the audio.");
+            return false;
+        }
+
+        streamAudioContext = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: TARGET_SAMPLE_RATE,
+        });
+
+        var source = streamAudioContext.createMediaStreamSource(streamMediaStream);
+        var bufferSize = 4096;
+
+        streamScriptNode = streamAudioContext.createScriptProcessor(bufferSize, 1, 1);
+        streamScriptNode.onaudioprocess = function (e) {
+            if (!streamTranscribing) return;
+            var inputData = e.inputBuffer.getChannelData(0);
+            var downsampled = downsampleBuffer(
+                inputData, streamAudioContext.sampleRate, TARGET_SAMPLE_RATE
+            );
+            var pcm16 = floatTo16BitPCM(downsampled);
+            socket.emit("audio_data", pcm16);
+        };
+
+        source.connect(streamScriptNode);
+        streamScriptNode.connect(streamAudioContext.destination);
+
+        console.log("[StreamAudio] Capture started, sampleRate=" + streamAudioContext.sampleRate);
+        return true;
+    }
+
+    function stopStreamAudioCapture() {
+        if (streamScriptNode) {
+            streamScriptNode.disconnect();
+            streamScriptNode = null;
+        }
+        if (streamAudioContext) {
+            streamAudioContext.close();
+            streamAudioContext = null;
+        }
+        if (streamMediaStream) {
+            streamMediaStream.getTracks().forEach(function (t) { t.stop(); });
+            streamMediaStream = null;
+        }
+        console.log("[StreamAudio] Capture stopped");
+    }
+
+    async function startStreamTranscription() {
+        // Start browser audio capture first
+        var ok = await startStreamAudioCapture();
+        if (!ok) return;
+
+        streamTranscribing = true;
+        btnStartTranscribe.disabled = true;
+        btnStopTranscribe.disabled = false;
+        if (streamStatusBadge) streamStatusBadge.classList.add("live");
+        if (streamStatusText) streamStatusText.textContent = "LIVE";
+
+        // Clear current transcript
+        setStreamCaption(streamSourceText, "", false, false, "ar");
+        setStreamCaption(streamTargetText, "", false, true, "en");
+
+        // Use browser mic audio mode (same as Translation tab)
+        socket.emit("start_pipeline", {
+            direction: streamDirection,
+            env: "demo",
+            audio_mode: "browser",
+        });
+    }
+
+    function stopStreamTranscription() {
+        stopStreamAudioCapture();
+        streamTranscribing = false;
+        btnStartTranscribe.disabled = false;
+        btnStopTranscribe.disabled = true;
+        if (streamStatusBadge) streamStatusBadge.classList.remove("live");
+        if (streamStatusText) streamStatusText.textContent = "Offline";
+
+        socket.emit("stop_pipeline");
+    }
+
+    // ─── Stream caption rendering ───────────────────────
+    socket.on("stream_caption", function (data) {
+        if (!streamTranscribing) return;
+
+        var srcLang = data.source_language || "ar";
+        var tgtLang = data.target_language || "en";
+        var isFinal = data.type === "final";
+
+        setStreamCaption(streamSourceText, data.source_text, isFinal, false, srcLang);
+        setStreamCaption(streamTargetText, data.translated_text, isFinal, true, tgtLang);
+
+        if (data.latency_ms != null) {
+            streamLatency.textContent = Math.round(data.latency_ms) + " ms";
+        }
+
+        if (isFinal && data.source_text) {
+            pushStreamHistory(data, srcLang, tgtLang);
+        }
+    });
+
+    socket.on("stream_pipeline_error", function (data) {
+        console.error("[Stream Pipeline]", data.error);
+        stopStreamTranscription();
+    });
+
+    socket.on("stream_pipeline_stopped", function () {
+        stopStreamTranscription();
+    });
+
+    function setStreamCaption(el, text, isFinal, isTranslated, lang) {
+        if (!text) {
+            el.innerHTML = '<span class="placeholder">' +
+                (isTranslated ? "Translation will appear here…" : "Waiting for transcription…") +
+                "</span>";
+            el.className = "transcript-text";
+            if (isTranslated) el.className += " translated";
+            return;
+        }
+        el.textContent = text;
+        el.dir = lang === "ar" ? "rtl" : "ltr";
+        el.style.textAlign = lang === "ar" ? "right" : "left";
+        var cls = "transcript-text";
+        if (isTranslated) cls += " translated";
+        cls += isFinal ? " final" : " partial";
+        el.className = cls;
+    }
+
+    function pushStreamHistory(data, srcLang, tgtLang) {
+        var item = document.createElement("div");
+        item.className = "history-item";
+
+        var src = document.createElement("div");
+        src.className = "hi-source";
+        src.textContent = data.source_text;
+        src.dir = srcLang === "ar" ? "rtl" : "ltr";
+        src.style.textAlign = srcLang === "ar" ? "right" : "left";
+
+        var arrow = document.createElement("div");
+        arrow.className = "hi-arrow";
+        arrow.textContent = "→";
+
+        var tgt = document.createElement("div");
+        tgt.className = "hi-target";
+        tgt.textContent = data.translated_text;
+        tgt.dir = tgtLang === "ar" ? "rtl" : "ltr";
+        tgt.style.textAlign = tgtLang === "ar" ? "right" : "left";
+
+        var lat = document.createElement("div");
+        lat.className = "hi-latency";
+        lat.textContent = data.latency_ms ? Math.round(data.latency_ms) + "ms" : "";
+
+        item.appendChild(src);
+        item.appendChild(arrow);
+        item.appendChild(tgt);
+        item.appendChild(lat);
+
+        streamHistoryList.insertBefore(item, streamHistoryList.firstChild);
+        while (streamHistoryList.children.length > 200) {
+            streamHistoryList.removeChild(streamHistoryList.lastChild);
+        }
+    }
+
+    if (clearStreamHistory) {
+        clearStreamHistory.addEventListener("click", function () {
+            streamHistoryList.innerHTML = "";
+        });
+    }
+
+    // ─── Stream direction toggle ────────────────────────
+    streamDirBtns.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            if (streamTranscribing) return;
+            streamDirBtns.forEach(function (b) { b.classList.remove("active"); });
+            btn.classList.add("active");
+            streamDirection = btn.dataset.direction;
+
+            if (streamDirection === "ar-to-en") {
+                if (streamSrcFlag) streamSrcFlag.textContent = "🇶🇦";
+                if (streamTgtFlag) streamTgtFlag.textContent = "🇬🇧";
+            } else {
+                if (streamSrcFlag) streamSrcFlag.textContent = "🇬🇧";
+                if (streamTgtFlag) streamTgtFlag.textContent = "🇶🇦";
+            }
+        });
+    });
+
+    // ─── Load channels on startup ───────────────────────
+    loadChannels();
 
 })();

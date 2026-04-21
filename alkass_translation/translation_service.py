@@ -18,8 +18,13 @@ from .observability import StageMetrics
 
 def _get_translator_token(config: AzureTranslatorConfig) -> str:
     """Obtain a bearer token for Azure Translator using azure-identity."""
-    from azure.identity import DefaultAzureCredential
-    credential = DefaultAzureCredential()
+    import os
+    from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+    client_id = os.environ.get("AZURE_CLIENT_ID", "")
+    if client_id:
+        credential = ManagedIdentityCredential(client_id=client_id)
+    else:
+        credential = DefaultAzureCredential()
     token = credential.get_token("https://cognitiveservices.azure.com/.default")
     return token.token
 
@@ -71,6 +76,11 @@ class TranslationService:
             token = _get_translator_token(self._config)
             headers["Authorization"] = f"Bearer {token}"
             headers["Ocp-Apim-Subscription-Region"] = self._config.region
+            # ResourceId is required for global endpoint with Entra auth
+            import os
+            resource_id = os.environ.get("AZURE_TRANSLATOR_RESOURCE_ID", "")
+            if resource_id:
+                headers["Ocp-Apim-ResourceId"] = resource_id
         return headers
 
     def translate(
@@ -165,6 +175,15 @@ class TranslationService:
         response = self._session.post(
             url, params=params, headers=headers, json=body, timeout=self._timeout
         )
+        if not response.ok:
+            import logging
+            logging.getLogger("alkass.translation").error(
+                f"Translator API error: {response.status_code} | URL: {url} | "
+                f"Region: {headers.get('Ocp-Apim-Subscription-Region', 'MISSING')} | "
+                f"ResourceId: {'SET' if headers.get('Ocp-Apim-ResourceId') else 'MISSING'} | "
+                f"Auth: {'Bearer' if 'Authorization' in headers else 'Key'} | "
+                f"Response: {response.text[:200]}"
+            )
         response.raise_for_status()
         data = response.json()
         return data[0]["translations"][0]["text"]

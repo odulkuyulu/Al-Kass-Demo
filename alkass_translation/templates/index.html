@@ -38,8 +38,14 @@
         </div>
     </header>
 
-    <!-- ─── MAIN CONTENT ─── -->
-    <main class="main">
+    <!-- ─── TAB BAR ─── -->
+    <nav class="tab-bar">
+        <button class="tab-btn active" data-tab="translation">Translation</button>
+        <button class="tab-btn" data-tab="livestreams">Live Streams</button>
+    </nav>
+
+    <!-- ═══ TAB: TRANSLATION (existing) ═══ -->
+    <main class="main tab-panel active" id="panel-translation">
         <!-- Caption Display Area -->
         <section class="caption-area">
             <div class="caption-container">
@@ -152,6 +158,116 @@
         </aside>
     </main>
 
+    <!-- ═══ TAB: LIVE STREAMS ═══ -->
+    <main class="main tab-panel" id="panel-livestreams">
+        <!-- Channel Sidebar -->
+        <aside class="channel-sidebar">
+            <h2 class="panel-title">Channels</h2>
+            <div class="channel-list" id="channelList">
+                <!-- Populated by JS -->
+            </div>
+        </aside>
+
+        <!-- Stream + Transcript Area -->
+        <section class="stream-area">
+            <!-- Video Player -->
+            <div class="video-container">
+                <div class="video-placeholder" id="videoPlaceholder">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
+                        <path d="M8 5v14l11-7z" fill="#C9A84C"/>
+                    </svg>
+                    <span>Select a channel to start watching</span>
+                </div>
+                <!-- Watch in popup message (shown when stream is active) -->
+                <div id="streamActiveMsg" class="stream-active-msg" style="display:none;">
+                    <div style="text-align:center; padding:40px;">
+                        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" style="margin-bottom:16px;">
+                            <rect x="2" y="3" width="20" height="14" rx="2" stroke="#C9A84C" stroke-width="1.5" fill="none"/>
+                            <path d="M8 21h8M12 17v4" stroke="#C9A84C" stroke-width="1.5" stroke-linecap="round"/>
+                            <path d="M9.5 8.5l5 2.5-5 2.5v-5z" fill="#C9A84C"/>
+                        </svg>
+                        <h3 style="color:#C9A84C; margin:0 0 8px;">Watching: <span id="activeChannelLabel"></span></h3>
+                        <p style="color:#8899aa; margin:0 0 16px; font-size:14px;">Stream is playing in a separate window.<br>Click below to reopen if closed.</p>
+                        <button class="btn btn-start" id="btnReopenStream" style="margin-bottom:8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+                            Reopen Stream
+                        </button>
+                    </div>
+                </div>
+                <video id="streamPlayer" class="stream-video" controls autoplay muted style="display:none;"></video>
+            </div>
+
+            <!-- Stream Controls -->
+            <div class="stream-controls">
+                <div class="stream-controls-left">
+                    <span class="stream-channel-name" id="streamChannelName">No channel selected</span>
+                    <div class="status-badge" id="streamStatusBadge">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Offline</span>
+                    </div>
+                </div>
+                <div class="stream-controls-right">
+                    <!-- Direction Toggle for streams -->
+                    <div class="direction-toggle direction-toggle-inline" id="streamDirectionToggle">
+                        <button class="dir-btn active" data-direction="ar-to-en">
+                            <span class="dir-from">AR</span>
+                            <span class="dir-arrow">→</span>
+                            <span class="dir-to">EN</span>
+                        </button>
+                        <button class="dir-btn" data-direction="en-to-ar">
+                            <span class="dir-from">EN</span>
+                            <span class="dir-arrow">→</span>
+                            <span class="dir-to">AR</span>
+                        </button>
+                    </div>
+                    <button class="btn btn-start btn-sm" id="btnStartTranscribe">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                        Transcribe
+                    </button>
+                    <button class="btn btn-stop btn-sm" id="btnStopTranscribe" disabled>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="6" width="12" height="12" rx="1"/>
+                        </svg>
+                        Stop
+                    </button>
+                </div>
+            </div>
+
+            <!-- Live Transcript Card -->
+            <div class="transcript-card">
+                <div class="transcript-header">
+                    <span>Live Transcription &amp; Translation</span>
+                    <span class="transcript-latency" id="streamLatency">—</span>
+                </div>
+                <div class="transcript-body">
+                    <div class="transcript-row">
+                        <span class="transcript-lang" id="streamSrcFlag">🇶🇦</span>
+                        <div class="transcript-text" id="streamSourceText" dir="rtl">
+                            <span class="placeholder">Waiting for transcription...</span>
+                        </div>
+                    </div>
+                    <div class="transcript-divider"></div>
+                    <div class="transcript-row">
+                        <span class="transcript-lang" id="streamTgtFlag">🇬🇧</span>
+                        <div class="transcript-text translated" id="streamTargetText" dir="ltr">
+                            <span class="placeholder">Translation will appear here...</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Stream caption history -->
+                <div class="transcript-history" id="streamHistoryContainer">
+                    <div class="history-header">
+                        <span>History</span>
+                        <button class="btn-clear" id="clearStreamHistory">Clear</button>
+                    </div>
+                    <div class="history-list" id="streamHistoryList"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
     <!-- ─── FOOTER ─── -->
     <footer class="footer">
         <span>Al Kass TV Translation Platform</span>
@@ -160,6 +276,7 @@
     </footer>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13"></script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
