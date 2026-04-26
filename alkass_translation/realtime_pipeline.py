@@ -30,6 +30,7 @@ from typing import AsyncIterator, Callable, Optional
 from .config import PipelineConfig, TranslationDirection, AuthMode
 from .glossary import DomainGlossary, load_glossary
 from .observability import PipelineLogger, SegmentTrace, StageMetrics
+from .speakers import SpeakerRegistry, UNKNOWN_COLOUR
 from .translation_service import TranslationService
 
 
@@ -49,6 +50,10 @@ class CaptionEvent:
     timestamp_ms: float         # Wall-clock time when emitted
     latency_ms: float           # End-to-end latency for this segment
     segment_id: str = ""
+    # ── Speaker diarisation (ConversationTranscriber) ──
+    speaker_id: str = ""        # Stable persona id, e.g. "S1". Empty if unknown.
+    speaker_label: str = ""     # Display label, e.g. "Speaker 1".
+    speaker_colour: str = ""    # Hex colour for UI badge.
 
 
 class RealTimeTranslationPipeline:
@@ -82,6 +87,8 @@ class RealTimeTranslationPipeline:
         self._recogniser = None
         self._running = False
         self._caption_callback: Optional[Callable] = None
+        # Speaker diarisation registry (reset on every start())
+        self._speakers = SpeakerRegistry()
 
         # Determine source/target languages from direction
         if config.direction == TranslationDirection.AR_TO_EN:
@@ -167,27 +174,46 @@ class RealTimeTranslationPipeline:
         else:
             audio_config = audio_source
 
-        self._recogniser = speechsdk.SpeechRecognizer(
+        # ── Speaker-aware transcription ──
+        # ConversationTranscriber performs unsupervised diarisation:
+        # it clusters voices on the fly and tags each utterance with a
+        # volatile speaker_id ("Guest_1", "Guest_2", "Unknown"). The
+        # SpeakerRegistry below maps those onto stable Speaker 1/2/3 personas.
+        from azure.cognitiveservices.speech.transcription import (
+            ConversationTranscriber,
+        )
+
+        # Fresh registry for every session so numbering restarts at 1.
+        self._speakers.reset()
+
+        self._recogniser = ConversationTranscriber(
             speech_config=speech_config,
             audio_config=audio_config,
         )
 
-        # Wire up event handlers
-        self._recogniser.recognizing.connect(self._on_recognizing)
-        self._recogniser.recognized.connect(self._on_recognized)
+        # Wire up event handlers (note: transcribing/transcribed, not
+        # recognizing/recognized — the diarised API uses different names).
+        self._recogniser.transcribing.connect(self._on_recognizing)
+        self._recogniser.transcribed.connect(self._on_recognized)
         self._recogniser.canceled.connect(self._on_canceled)
         self._recogniser.session_stopped.connect(self._on_session_stopped)
 
         self._running = True
         self._logger.log_info(
-            f"Starting real-time pipeline: {self._source_lang} → {self._target_lang}"
+            f"Starting real-time pipeline (diarised): "
+            f"{self._source_lang} → {self._target_lang}"
         )
-        self._recogniser.start_continuous_recognition()
+        self._recogniser.start_transcribing_async()
 
     def stop(self):
         """Stop the real-time pipeline."""
         if self._recogniser and self._running:
-            self._recogniser.stop_continuous_recognition()
+            try:
+                self._recogniser.stop_transcribing_async()
+            except Exception:
+                # Older SDKs / non-diarised path fallback
+                if hasattr(self._recogniser, "stop_continuous_recognition"):
+                    self._recogniser.stop_continuous_recognition()
             self._running = False
             self._logger.log_info("Real-time pipeline stopped.")
 
@@ -236,6 +262,9 @@ class RealTimeTranslationPipeline:
         trace.add_stage(translate_metrics)
 
         # Emit caption
+        # Note: partials are intentionally rendered without speaker colour
+        # (UI shows neutral grey) to avoid colour flicker as diarisation
+        # confidence builds up. Finals carry the resolved persona.
         event = CaptionEvent(
             caption_type=CaptionType.PARTIAL,
             source_text=source_text,
@@ -294,6 +323,10 @@ class RealTimeTranslationPipeline:
         trace.add_stage(stt_metrics)
         trace.add_stage(translate_metrics)
 
+        # Resolve diarisation speaker id ("Guest_1" → Persona "S1")
+        raw_speaker = getattr(evt.result, "speaker_id", None)
+        persona = self._speakers.resolve(raw_speaker)
+
         event = CaptionEvent(
             caption_type=CaptionType.FINAL,
             source_text=source_text,
@@ -303,6 +336,9 @@ class RealTimeTranslationPipeline:
             timestamp_ms=emit_time * 1000,
             latency_ms=trace.total_latency_ms,
             segment_id=segment_id,
+            speaker_id=persona.id,
+            speaker_label=persona.label,
+            speaker_colour=persona.colour,
         )
 
         self._logger.log_segment(

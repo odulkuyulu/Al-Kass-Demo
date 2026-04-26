@@ -848,6 +848,36 @@ body {
     font-weight: 400;
 }
 
+/* ─── Speaker diarisation badges ─── */
+.speaker-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    margin-right: 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    line-height: 1.6;
+}
+
+.transcript-text.with-speaker-bar {
+    padding-left: 12px;
+    border-left: 4px solid transparent;
+    transition: border-left-color 0.25s ease;
+}
+
+.transcript-text .speaker-text {
+    margin-left: 4px;
+}
+
+.history-item.with-speaker-bar {
+    border-left: 4px solid transparent;
+    padding-left: 10px;
+    transition: border-left-color 0.25s ease;
+}
+
 .transcript-divider {
     height: 1px;
     background: var(--border);

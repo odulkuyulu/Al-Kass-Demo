@@ -22,3 +22,9 @@ Thumbs.db
 
 # Prompt file (not needed in deployment)
 Prompt.txt
+
+# Build / deploy logs
+acr-build.log
+deploy.log
+.venv/
+

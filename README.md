@@ -72,15 +72,34 @@ alkass_translation/
 ├── config.py                # Environment-aware configuration
 ├── observability.py         # Latency tracking, structured logging
 ├── glossary.py              # Domain-specific term corrections
+├── speakers.py              # Speaker registry (diarisation → personas)
 ├── translation_service.py   # Azure Translator API wrapper
 ├── realtime_pipeline.py     # Near real-time streaming path
 ├── offline_pipeline.py      # Offline batch processing path
 ├── subtitles.py             # SRT/VTT subtitle generation
+├── web_app.py               # Flask + Socket.IO web UI
 └── main.py                  # CLI entry point
 
 glossary_sports.csv          # Sample sports terminology glossary
 ARCHITECTURE.md              # Full reference architecture document
 ```
+
+## Speaker Diarisation (Live Streams)
+
+The near real-time pipeline uses Azure Speech **`ConversationTranscriber`**
+to perform unsupervised speaker diarisation — it clusters voices on the fly
+and tags each utterance with a stable persona (`Speaker 1`, `Speaker 2`, …)
+rendered with a high-contrast colour palette in the Live Streams tab.
+
+- **No voice enrolment required** — personas are session-scoped and reset on
+  every pipeline restart.
+- **Movie-subtitle convention** — finals carry a coloured `Speaker N` badge;
+  partials stay neutral grey to avoid colour flicker as diarisation
+  confidence builds.
+- **Palette:** gold, cyan, coral, mint, lilac, amber (configurable in
+  `alkass_translation/speakers.py`).
+
+See [ARCHITECTURE.md](ARCHITECTURE.md#speaker-diarisation) for the full flow.
 
 ## Environment Profiles
 

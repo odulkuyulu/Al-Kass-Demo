@@ -95,6 +95,9 @@ def _caption_to_browser(event: CaptionEvent):
         "target_language": event.target_language,
         "latency_ms": round(event.latency_ms),
         "segment_id": event.segment_id,
+        "speaker_id": event.speaker_id,
+        "speaker_label": event.speaker_label,
+        "speaker_colour": event.speaker_colour,
     })
 
 
@@ -338,6 +341,9 @@ def _stream_caption_to_browser(event: CaptionEvent):
         "target_language": event.target_language,
         "latency_ms": round(event.latency_ms),
         "segment_id": event.segment_id,
+        "speaker_id": event.speaker_id,
+        "speaker_label": event.speaker_label,
+        "speaker_colour": event.speaker_colour,
     })
 
 

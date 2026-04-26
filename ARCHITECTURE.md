@@ -70,25 +70,28 @@ A broadcast-grade bilingual translation system (Arabic ↔ English) with two pro
 ### 1. Near Real-Time Path
 
 ```
-Audio Stream ──► Azure Speech SDK ──► Partial/Final Events ──► Azure Translator ──► Glossary Fix ──► Caption Output
-                 (continuous              (text segments)         (per-segment)      (post-process)   (callback)
-                  recognition)
+Audio Stream ──► ConversationTranscriber ──► Partial / Final + speaker_id ──► Translator ──► Glossary ──► Caption Output
+                  (diarised streaming STT)        (per utterance)              (per segment)   (post-process)  (callback w/ persona)
 ```
 
 **Latency budget (target):**
 
 | Stage | Target | Notes |
 |-------|--------|-------|
-| STT (streaming) | < 500ms | Azure SDK handles buffering |
+| STT + diarisation | < 800ms | ConversationTranscriber adds 150–400 ms over plain STT |
 | Translation API | < 800ms | Single-segment call |
 | Glossary + emit | < 50ms | In-memory lookup |
 | **End-to-end** | **< 2s** | Production config |
 
 **Key design decisions:**
+- `ConversationTranscriber` performs **unsupervised diarisation** — no voice
+  enrolment, no pre-known speakers; personas are clustered per session.
 - Partial results are translated immediately (flicker vs latency trade-off)
-- Final results replace partials for accuracy
-- No sentence-boundary blocking — low latency is prioritised
-- Latency per segment is logged for operational visibility
+  but rendered **without a speaker badge** until finalised, to avoid colour
+  flicker as diarisation confidence builds.
+- Final results carry a stable `Speaker N` persona via `SpeakerRegistry`.
+- No sentence-boundary blocking — low latency is prioritised.
+- Latency per segment is logged for operational visibility.
 
 ### 2. Offline Path
 
@@ -128,12 +131,72 @@ alkass_translation/
 ├── config.py                # All configuration (env-aware)
 ├── observability.py         # Latency tracking, structured logging
 ├── glossary.py              # Domain term corrections
+├── speakers.py              # SpeakerRegistry: diarised IDs → personas + colours
 ├── translation_service.py   # Azure Translator wrapper (shared)
-├── realtime_pipeline.py     # Near real-time streaming path
+├── realtime_pipeline.py     # Near real-time streaming path (ConversationTranscriber)
 ├── offline_pipeline.py      # Offline batch path + subtitle gen
 ├── subtitles.py             # SRT/VTT format generation
+├── web_app.py               # Flask + Socket.IO UI (live captions, channels)
 └── main.py                  # CLI entry point
 ```
+
+---
+
+## Speaker Diarisation
+
+### Goal
+
+Identify *who is speaking* in a single mixed audio stream and label each
+caption with a stable persona (movie-subtitle convention: `Speaker 1`,
+`Speaker 2`, …). No voice enrolment is required.
+
+### Flow
+
+```
+HLS / Mic input ──► ConversationTranscriber ──► Guest_1 / Guest_2 / Unknown
+                     (auto-cluster voices)
+                              │
+                              ▼
+                       SpeakerRegistry  ──► Persona { id: "S1", label: "Speaker 1", colour: "#FFD400" }
+                  (session-scoped map)
+                              │
+                              ▼
+                    Translator + Glossary
+                              │
+                              ▼
+                  CaptionEvent (+ speaker fields)
+                              │
+                              ▼
+                Web UI: coloured pill + left bar
+```
+
+### Persona palette
+
+| Slot | Colour | Hex |
+|------|--------|-----|
+| Speaker 1 | Alkass gold | `#FFD400` |
+| Speaker 2 | Cyan        | `#00C2FF` |
+| Speaker 3 | Coral       | `#FF6B6B` |
+| Speaker 4 | Mint        | `#7CFFB2` |
+| Speaker 5 | Lilac       | `#C792EA` |
+| Speaker 6 | Amber       | `#FFA552` |
+| Unknown   | Neutral grey | `#9AA0A6` |
+
+### Behaviour
+
+- **Session scope:** persona numbering resets to 1 on every pipeline start.
+- **Partials:** rendered without badge / colour bar to avoid flicker.
+- **Finals:** carry the resolved persona on screen and in the history list.
+- **Trade-off:** ConversationTranscriber adds ~150–400 ms over plain STT;
+  fits inside the production profile latency budget.
+
+### When this is not enough
+
+| Scenario | Recommended upgrade |
+|----------|---------------------|
+| Need real names ("Khalid Jassim") | Add Azure **Speaker Recognition** with voice enrolment |
+| Heavy overlapping speech | Self-host **pyannote.audio** / **WhisperX** (GPU, +1–3 s latency) |
+| Multi-mic OB feed available | Skip diarisation — tag by **channel index**, deterministic |
 
 ---
 
@@ -161,9 +224,12 @@ alkass_translation/
 - [x] Optional TTS audio track
 - [x] Per-stage latency observability
 - [x] Environment-aware configuration
+- [x] Unsupervised speaker diarisation (ConversationTranscriber + coloured personas)
 
 ### Phase 2 — Production Hardening
-- [ ] Speaker diarisation (identify multiple speakers)
+- [ ] Named-speaker identification (Azure Speaker Recognition + enrolment)
+- [ ] Operator UI to rename personas ("Speaker 2" → "Commentator A")
+- [ ] Diarised SRT/VTT output (offline path)
 - [ ] Broadcast overlay integration (CG/graphics API)
 - [ ] Session persistence and recovery
 - [ ] Network stream input (RTMP, SRT, NDI)
@@ -190,7 +256,10 @@ alkass_translation/
 
 2. **Single language pair per pipeline instance.** To translate both directions simultaneously, run two pipeline instances.
 
-3. **No speaker identification in Phase 1.** All speech is attributed to a single speaker. Multi-speaker support requires Phase 2 diarisation work.
+3. **No speaker identification in Phase 1.** Personas are anonymous
+   (`Speaker 1`, `Speaker 2`, …) and reset every session. To map a persona
+   to a real person across sessions, Phase 2 adds Azure Speaker Recognition
+   with voice enrolment.
 
 4. **Translation quality depends on Azure Translator.** Domain glossary helps with sports terms, but novel phrases will use generic translation. Phase 2 adds Custom Translator training.
 

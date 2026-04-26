@@ -59,7 +59,8 @@
             data = {
                 type, source_text, translated_text,
                 source_language, target_language,
-                latency_ms, segment_id
+                latency_ms, segment_id,
+                speaker_id, speaker_label, speaker_colour
             }
         */
         const srcLang = data.source_language || "ar";
@@ -68,8 +69,8 @@
 
         // If stream transcription is active, render in stream panel
         if (streamTranscribing) {
-            setStreamCaption(streamSourceText, data.source_text, isFinal, false, srcLang);
-            setStreamCaption(streamTargetText, data.translated_text, isFinal, true, tgtLang);
+            setStreamCaption(streamSourceText, data.source_text, isFinal, false, srcLang, data);
+            setStreamCaption(streamTargetText, data.translated_text, isFinal, true, tgtLang, data);
             if (data.latency_ms != null && streamLatency) {
                 streamLatency.textContent = Math.round(data.latency_ms) + " ms";
             }
@@ -593,8 +594,8 @@
         var tgtLang = data.target_language || "en";
         var isFinal = data.type === "final";
 
-        setStreamCaption(streamSourceText, data.source_text, isFinal, false, srcLang);
-        setStreamCaption(streamTargetText, data.translated_text, isFinal, true, tgtLang);
+        setStreamCaption(streamSourceText, data.source_text, isFinal, false, srcLang, data);
+        setStreamCaption(streamTargetText, data.translated_text, isFinal, true, tgtLang, data);
 
         if (data.latency_ms != null) {
             streamLatency.textContent = Math.round(data.latency_ms) + " ms";
@@ -614,19 +615,42 @@
         stopStreamTranscription();
     });
 
-    function setStreamCaption(el, text, isFinal, isTranslated, lang) {
+    function setStreamCaption(el, text, isFinal, isTranslated, lang, data) {
         if (!text) {
             el.innerHTML = '<span class="placeholder">' +
                 (isTranslated ? "Translation will appear here…" : "Waiting for transcription…") +
                 "</span>";
             el.className = "transcript-text";
             if (isTranslated) el.className += " translated";
+            el.style.borderLeftColor = "";
             return;
         }
-        el.textContent = text;
+
+        // Build content: optional speaker badge (finals only) + text
+        var hasSpeaker = isFinal && data && data.speaker_label && data.speaker_colour;
+        if (hasSpeaker) {
+            var badge = document.createElement("span");
+            badge.className = "speaker-badge";
+            badge.style.backgroundColor = data.speaker_colour;
+            badge.style.color = "#0a0a0a";
+            badge.textContent = data.speaker_label;
+
+            var span = document.createElement("span");
+            span.className = "speaker-text";
+            span.textContent = text;
+
+            el.innerHTML = "";
+            el.appendChild(badge);
+            el.appendChild(span);
+            el.style.borderLeftColor = data.speaker_colour;
+        } else {
+            el.textContent = text;
+            el.style.borderLeftColor = "";  // neutral for partials
+        }
+
         el.dir = lang === "ar" ? "rtl" : "ltr";
         el.style.textAlign = lang === "ar" ? "right" : "left";
-        var cls = "transcript-text";
+        var cls = "transcript-text with-speaker-bar";
         if (isTranslated) cls += " translated";
         cls += isFinal ? " final" : " partial";
         el.className = cls;
@@ -635,12 +659,27 @@
     function pushStreamHistory(data, srcLang, tgtLang) {
         var item = document.createElement("div");
         item.className = "history-item";
+        if (data.speaker_colour) {
+            item.style.borderLeftColor = data.speaker_colour;
+            item.classList.add("with-speaker-bar");
+        }
 
         var src = document.createElement("div");
         src.className = "hi-source";
-        src.textContent = data.source_text;
         src.dir = srcLang === "ar" ? "rtl" : "ltr";
         src.style.textAlign = srcLang === "ar" ? "right" : "left";
+
+        if (data.speaker_label && data.speaker_colour) {
+            var badge = document.createElement("span");
+            badge.className = "speaker-badge";
+            badge.style.backgroundColor = data.speaker_colour;
+            badge.style.color = "#0a0a0a";
+            badge.textContent = data.speaker_label;
+            src.appendChild(badge);
+            src.appendChild(document.createTextNode(" " + data.source_text));
+        } else {
+            src.textContent = data.source_text;
+        }
 
         var arrow = document.createElement("div");
         arrow.className = "hi-arrow";
