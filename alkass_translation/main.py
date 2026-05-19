@@ -29,16 +29,41 @@ def cmd_realtime(args):
     pipeline = RealTimeTranslationPipeline(config)
 
     audio_source = args.input if args.input else None
+    rtmp_ingest = None
+
+    if args.rtmp_url:
+        import azure.cognitiveservices.speech as speechsdk
+        from .rtmp_ingest import RtmpAudioIngest
+
+        audio_format = speechsdk.audio.AudioStreamFormat(
+            samples_per_second=16000,
+            bits_per_sample=16,
+            channels=1,
+        )
+        push_stream = speechsdk.audio.PushAudioInputStream(stream_format=audio_format)
+        audio_source = speechsdk.audio.AudioConfig(stream=push_stream)
+
+        rtmp_ingest = RtmpAudioIngest(
+            rtmp_url=args.rtmp_url,
+            push_stream=push_stream,
+            ffmpeg_path=args.ffmpeg_path,
+            rtmp_transport=args.rtmp_transport,
+        )
 
     print("=" * 60)
     print("  ALKASS TV — Near Real-Time Translation")
     print(f"  Direction: {config.direction.value}")
     print(f"  Environment: {config.environment.value}")
-    print(f"  Source: {'microphone' if audio_source is None else audio_source}")
+    source_label = "microphone" if audio_source is None else audio_source
+    if args.rtmp_url:
+        source_label = f"rtmp ({args.rtmp_url})"
+    print(f"  Source: {source_label}")
     print("=" * 60)
     print("  Press Ctrl+C to stop.\n")
 
     try:
+        if rtmp_ingest is not None:
+            rtmp_ingest.start()
         pipeline.start(audio_source=audio_source)
         # Keep running until interrupted or session ends
         import time
@@ -47,6 +72,8 @@ def cmd_realtime(args):
     except KeyboardInterrupt:
         print("\n  Stopping...")
     finally:
+        if rtmp_ingest is not None:
+            rtmp_ingest.stop()
         pipeline.stop()
         print("  Pipeline stopped.")
 
@@ -159,6 +186,24 @@ Examples:
         type=str,
         default=None,
         help="Audio file path (omit for microphone input)",
+    )
+    rt_parser.add_argument(
+        "--rtmp-url",
+        type=str,
+        default=None,
+        help="RTMP stream URL (overrides --input/microphone)",
+    )
+    rt_parser.add_argument(
+        "--ffmpeg-path",
+        type=str,
+        default="ffmpeg",
+        help="FFmpeg executable path (default: ffmpeg in PATH)",
+    )
+    rt_parser.add_argument(
+        "--rtmp-transport",
+        choices=["tcp", "udp"],
+        default="tcp",
+        help="RTMP transport protocol (default: tcp)",
     )
 
     # Offline sub-command

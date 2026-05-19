@@ -18,6 +18,12 @@ param speechRegion string = 'qatarcentral'
 @description('Azure Translator region')
 param translatorRegion string = 'qatarcentral'
 
+@description('Virtual network CIDR for the Container Apps environment')
+param virtualNetworkAddressPrefix string = '10.42.0.0/16'
+
+@description('Dedicated infrastructure subnet CIDR for Azure Container Apps workload profiles environment. Minimum supported size is /27.')
+param infrastructureSubnetAddressPrefix string = '10.42.0.0/27'
+
 // ─── Log Analytics ───
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${appName}-logs'
@@ -25,6 +31,67 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   properties: {
     sku: { name: 'PerGB2018' }
     retentionInDays: 30
+  }
+}
+
+// ─── Networking for fixed outbound IP ───
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+  name: '${appName}-vnet'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        virtualNetworkAddressPrefix
+      ]
+    }
+  }
+}
+
+resource natPublicIp 'Microsoft.Network/publicIPAddresses@2024-05-01' = {
+  name: '${appName}-nat-pip'
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAddressVersion: 'IPv4'
+    publicIPAllocationMethod: 'Static'
+    idleTimeoutInMinutes: 4
+  }
+}
+
+resource natGateway 'Microsoft.Network/natGateways@2024-05-01' = {
+  name: '${appName}-nat'
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    idleTimeoutInMinutes: 10
+    publicIpAddresses: [
+      {
+        id: natPublicIp.id
+      }
+    ]
+  }
+}
+
+resource infrastructureSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
+  parent: virtualNetwork
+  name: 'aca-infra'
+  properties: {
+    addressPrefix: infrastructureSubnetAddressPrefix
+    natGateway: {
+      id: natGateway.id
+    }
+    delegations: [
+      {
+        name: 'acaDelegation'
+        properties: {
+          serviceName: 'Microsoft.App/environments'
+        }
+      }
+    ]
   }
 }
 
@@ -40,12 +107,21 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
         sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
+    vnetConfiguration: {
+      infrastructureSubnetId: infrastructureSubnet.id
+    }
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
   }
 }
 
 // ─── Container Registry ───
 resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
-  name: replace('${appName}acr', '-', '')
+  name: '${replace(appName, '-', '')}acr${uniqueString(resourceGroup().id)}'
   location: location
   sku: { name: 'Basic' }
   properties: { adminUserEnabled: true }
@@ -74,6 +150,9 @@ resource speechRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-0
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
+  tags: {
+    'azd-service-name': 'web'
+  }
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -133,3 +212,4 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
 output appUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
 output acrLoginServer string = acr.properties.loginServer
 output identityClientId string = identity.properties.clientId
+output outboundWhitelistIp string = natPublicIp.properties.ipAddress

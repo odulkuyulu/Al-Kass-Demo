@@ -14,6 +14,10 @@ Broadcast-grade bilingual audio translation (Arabic ↔ English) for live and po
 pip install -r requirements.txt
 ```
 
+### RTMP Input Prerequisite
+For RTMP live stream input, install FFmpeg and ensure `ffmpeg` is available in `PATH`.
+You can also pass a full path via `--ffmpeg-path`.
+
 ### Configure — Authentication
 
 The platform supports **two authentication modes**. It auto-detects which to use.
@@ -54,6 +58,27 @@ python -m alkass_translation.main realtime --direction ar-to-en
 ```bash
 python -m alkass_translation.main realtime --direction ar-to-en --input sample.wav
 ```
+
+**Near real-time (RTMP live stream):**
+```bash
+python -m alkass_translation.main realtime --direction ar-to-en --rtmp-url rtmp://your-live-endpoint/app/streamKey
+```
+
+**Near real-time (RTMP with explicit FFmpeg path):**
+```bash
+python -m alkass_translation.main realtime --direction ar-to-en --rtmp-url rtmp://your-live-endpoint/app/streamKey --ffmpeg-path "C:\\ffmpeg\\bin\\ffmpeg.exe"
+```
+
+**Web UI (choose RTMP in Controls):**
+```bash
+python -m alkass_translation.web_app
+```
+Then open `http://localhost:5000`, set **Audio Input** to **RTMP Live Stream**, enter the stream URL, and start translation.
+The control panel now includes a live **RTMP Ingest** diagnostics card that updates every 2 seconds with FFmpeg status, reconnect count, bytes forwarded, uptime, and last error.
+
+**Ingest health/status API:**
+- `GET /api/status` (pipeline state + input mode + ingest status)
+- `GET /api/ingest` (RTMP ingest details: running, reconnect_count, bytes_forwarded, last_error)
 
 **Offline (file → subtitles):**
 ```bash

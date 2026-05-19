@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# Install system deps for Azure Speech SDK and ffmpeg for stream audio extraction
+# Install system deps for Azure Speech SDK + FFmpeg for RTMP ingest
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 libasound2 libgstreamer1.0-0 ffmpeg \
     && rm -rf /var/lib/apt/lists/*

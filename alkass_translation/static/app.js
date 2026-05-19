@@ -16,6 +16,17 @@
     const btnStop         = document.getElementById("btnStop");
     const btnClear        = document.getElementById("clearHistory");
     const selectEnv       = document.getElementById("envSelect");
+    const audioModeSelect = document.getElementById("audioModeSelect");
+    const rtmpFields      = document.getElementById("rtmpFields");
+    const rtmpUrlInput    = document.getElementById("rtmpUrlInput");
+    const ffmpegPathInput = document.getElementById("ffmpegPathInput");
+    const rtmpTransportSelect = document.getElementById("rtmpTransportSelect");
+    const ingestMode = document.getElementById("ingestMode");
+    const ingestFfmpeg = document.getElementById("ingestFfmpeg");
+    const ingestReconnects = document.getElementById("ingestReconnects");
+    const ingestBytes = document.getElementById("ingestBytes");
+    const ingestUptime = document.getElementById("ingestUptime");
+    const ingestError = document.getElementById("ingestError");
     const statSegments    = document.getElementById("segmentCount");
     const statAvgLatency  = document.getElementById("avgLatency");
     const statSessionTime = document.getElementById("sessionTime");
@@ -26,6 +37,7 @@
     let running      = false;
     let sessionStart = null;
     let sessionTimer = null;
+    let ingestTimer = null;
     let segments     = 0;
     let totalLatency = 0;
 
@@ -46,11 +58,15 @@
     socket.on("disconnect", function () {
         console.log("[WS] Disconnected");
         stopAudioCapture();
+        stopIngestPolling();
         setRunning(false);
     });
 
     socket.on("status", function (data) {
         console.log("[WS] Status:", data);
+        if (data && data.rtmp) {
+            renderIngestStatus(data.rtmp, "rtmp");
+        }
     });
 
     // ─── Caption event from server ──────────────────────
@@ -103,11 +119,13 @@
     socket.on("pipeline_error", function (data) {
         console.error("[Pipeline]", data.error);
         stopAudioCapture();
+        stopIngestPolling();
         setRunning(false);
     });
 
     socket.on("pipeline_stopped", function () {
         stopAudioCapture();
+        stopIngestPolling();
         setRunning(false);
     });
 
@@ -201,6 +219,71 @@
         statAvgLatency.textContent = "—";
         statSessionTime.textContent = "00:00";
         latencyValue.textContent = "— ms";
+    }
+
+    function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return "0 B";
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+        return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    }
+
+    function formatUptime(seconds) {
+        var secs = Math.max(0, parseInt(seconds || 0, 10));
+        var m = Math.floor(secs / 60).toString().padStart(2, "0");
+        var s = (secs % 60).toString().padStart(2, "0");
+        return m + ":" + s;
+    }
+
+    function renderIngestStatus(ingest, mode) {
+        ingestMode.textContent = mode || "—";
+        ingestFfmpeg.textContent = ingest && ingest.ffmpeg_alive ? "ONLINE" : "OFFLINE";
+        ingestFfmpeg.classList.toggle("ingest-ok", !!(ingest && ingest.ffmpeg_alive));
+        ingestFfmpeg.classList.toggle("ingest-bad", !!(ingest && !ingest.ffmpeg_alive));
+        ingestReconnects.textContent = ingest && ingest.reconnect_count != null
+            ? String(ingest.reconnect_count)
+            : "0";
+        ingestBytes.textContent = formatBytes(ingest ? ingest.bytes_forwarded : 0);
+        ingestUptime.textContent = formatUptime(ingest ? ingest.uptime_s : 0);
+        if (ingest && ingest.last_error) {
+            ingestError.textContent = ingest.last_error;
+            ingestError.classList.add("ingest-bad");
+        } else {
+            ingestError.textContent = "No ingest errors.";
+            ingestError.classList.remove("ingest-bad");
+        }
+    }
+
+    function resetIngestStatus() {
+        renderIngestStatus(null, "idle");
+    }
+
+    async function refreshIngestStatus() {
+        try {
+            const resp = await fetch("/api/status", { cache: "no-store" });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (data.input_mode === "rtmp") {
+                renderIngestStatus(data.ingest || null, "rtmp");
+            } else {
+                renderIngestStatus(data.ingest || null, data.input_mode || "idle");
+            }
+        } catch (err) {
+            console.warn("[Ingest] status poll failed", err);
+        }
+    }
+
+    function startIngestPolling() {
+        stopIngestPolling();
+        ingestTimer = setInterval(refreshIngestStatus, 2000);
+        refreshIngestStatus();
+    }
+
+    function stopIngestPolling() {
+        if (ingestTimer) {
+            clearInterval(ingestTimer);
+            ingestTimer = null;
+        }
     }
 
     // ─── Browser audio capture ────────────────────────────
@@ -298,12 +381,22 @@
         if (running) return;
         resetStats();
 
-        // Start browser audio capture first
-        var ok = await startAudioCapture();
-        if (!ok) return;
+        var audioMode = audioModeSelect.value;
+
+        if (audioMode === "rtmp" && !rtmpUrlInput.value.trim()) {
+            alert("Please enter an RTMP URL.");
+            return;
+        }
+
+        if (audioMode === "browser") {
+            // Start browser audio capture first
+            var ok = await startAudioCapture();
+            if (!ok) return;
+        }
 
         setRunning(true);
         startSessionClock();
+        startIngestPolling();
 
         // Clear current captions
         setCaption(sourceText, "", false, false, "ar");
@@ -312,15 +405,20 @@
         socket.emit("start_pipeline", {
             direction: direction,
             env: selectEnv.value,
-            audio_mode: "browser"
+            audio_mode: audioMode,
+            rtmp_url: rtmpUrlInput.value.trim(),
+            ffmpeg_path: ffmpegPathInput.value.trim() || "ffmpeg",
+            rtmp_transport: rtmpTransportSelect.value,
         });
     });
 
     btnStop.addEventListener("click", function () {
         if (!running) return;
         stopAudioCapture();
+        stopIngestPolling();
         socket.emit("stop_pipeline");
         setRunning(false);
+        resetIngestStatus();
     });
 
     btnClear.addEventListener("click", function () {
@@ -354,8 +452,16 @@
         });
     });
 
+    audioModeSelect.addEventListener("change", function () {
+        var isRtmp = audioModeSelect.value === "rtmp";
+        rtmpFields.style.display = isRtmp ? "block" : "none";
+    });
+
     // ─── Init ───────────────────────────────────────────
     setRunning(false);
+    rtmpFields.style.display = "none";
+    resetIngestStatus();
+    refreshIngestStatus();
 
     // ═══════════════════════════════════════════════════════
     //  TAB SWITCHING

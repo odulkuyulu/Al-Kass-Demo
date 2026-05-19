@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "appName": {
+      "value": "alkass-translation"
+    },
+    "speechEndpoint": {
+      "value": "https://speech-alkass.cognitiveservices.azure.com/"
+    },
+    "translatorEndpoint": {
+      "value": "https://tranlator-alkass.cognitiveservices.azure.com/"
+    },
+    "speechRegion": {
+      "value": "qatarcentral"
+    },
+    "translatorRegion": {
+      "value": "qatarcentral"
+    },
+    "virtualNetworkAddressPrefix": {
+      "value": "10.42.0.0/16"
+    },
+    "infrastructureSubnetAddressPrefix": {
+      "value": "10.42.0.0/27"
+    }
+  }
+}

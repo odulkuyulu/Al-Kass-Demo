@@ -124,6 +124,29 @@
                 </select>
             </div>
 
+            <div class="control-group">
+                <label class="control-label">Audio Input</label>
+                <select class="control-select" id="audioModeSelect">
+                    <option value="browser" selected>Browser Microphone</option>
+                    <option value="server_mic">Server Microphone</option>
+                    <option value="rtmp">RTMP Live Stream</option>
+                </select>
+            </div>
+
+            <div class="control-group" id="rtmpFields" style="display:none;">
+                <label class="control-label" for="rtmpUrlInput">RTMP URL</label>
+                <input class="control-select" id="rtmpUrlInput" type="text" placeholder="rtmp://host/app/streamKey">
+
+                <label class="control-label" for="ffmpegPathInput" style="margin-top:10px;">FFmpeg Path (Optional)</label>
+                <input class="control-select" id="ffmpegPathInput" type="text" placeholder="ffmpeg">
+
+                <label class="control-label" for="rtmpTransportSelect" style="margin-top:10px;">RTMP Transport</label>
+                <select class="control-select" id="rtmpTransportSelect">
+                    <option value="tcp" selected>TCP</option>
+                    <option value="udp">UDP</option>
+                </select>
+            </div>
+
             <!-- Start/Stop Buttons -->
             <div class="control-group">
                 <button class="btn btn-start" id="btnStart">
@@ -154,6 +177,31 @@
                     <span class="stat-label">Session</span>
                     <span class="stat-value" id="sessionTime">00:00</span>
                 </div>
+            </div>
+
+            <div class="control-group stats-group" id="ingestPanel">
+                <div class="panel-title ingest-title">RTMP Ingest</div>
+                <div class="stat-item">
+                    <span class="stat-label">Mode</span>
+                    <span class="stat-value" id="ingestMode">—</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">FFmpeg</span>
+                    <span class="stat-value" id="ingestFfmpeg">—</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Reconnects</span>
+                    <span class="stat-value" id="ingestReconnects">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Bytes Forwarded</span>
+                    <span class="stat-value" id="ingestBytes">0 B</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Uptime</span>
+                    <span class="stat-value" id="ingestUptime">00:00</span>
+                </div>
+                <div class="ingest-error" id="ingestError">No ingest errors.</div>
             </div>
         </aside>
     </main>

@@ -1,7 +1,10 @@
 using './main.bicep'
 
 param appName = 'alkass-translation'
+param location = 'uaenorth'
 param speechEndpoint = 'https://speech-alkass.cognitiveservices.azure.com/'
 param translatorEndpoint = 'https://tranlator-alkass.cognitiveservices.azure.com/'
 param speechRegion = 'qatarcentral'
 param translatorRegion = 'qatarcentral'
+param virtualNetworkAddressPrefix = '10.42.0.0/16'
+param infrastructureSubnetAddressPrefix = '10.42.0.0/27'

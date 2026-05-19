@@ -19,8 +19,9 @@ from flask import Flask, render_template, request, jsonify, Response
 from flask_socketio import SocketIO, emit
 import requests as http_requests
 
-from .config import PipelineConfig, TranslationDirection, AuthMode
-from .realtime_pipeline import RealTimeTranslationPipeline, CaptionEvent, CaptionType
+from .config import PipelineConfig, TranslationDirection
+from .realtime_pipeline import RealTimeTranslationPipeline, CaptionEvent
+from .rtmp_ingest import RtmpAudioIngest
 
 app = Flask(
     __name__,
@@ -36,6 +37,8 @@ _pipeline_lock = threading.Lock()
 
 # Push audio stream for browser-based mic input
 _push_stream = None
+_rtmp_ingest = None
+_input_mode = "idle"
 
 # ── Live Stream pipeline globals ──
 _stream_pipeline = None
@@ -141,20 +144,32 @@ def test_translate():
 
 @app.route("/api/status")
 def status():
-    global _pipeline
+    global _pipeline, _rtmp_ingest, _input_mode
+    ingest = _rtmp_ingest.get_status() if _rtmp_ingest else None
     return jsonify({
         "running": _pipeline.is_running if _pipeline else False,
+        "input_mode": _input_mode,
+        "ingest": ingest,
     })
+
+
+@app.route("/api/ingest")
+def ingest_status():
+    global _rtmp_ingest
+    return jsonify(_rtmp_ingest.get_status() if _rtmp_ingest else {"running": False})
 
 
 @socketio.on("start_pipeline")
 def handle_start(data):
     """Start the translation pipeline from a browser request."""
-    global _pipeline, _push_stream
+    global _pipeline, _push_stream, _rtmp_ingest, _input_mode
 
     direction = data.get("direction", "ar-to-en")
     env = data.get("env", "demo")
-    audio_mode = data.get("audio_mode", "browser")  # "browser" or "server_mic"
+    audio_mode = data.get("audio_mode", "browser")  # browser | server_mic | rtmp
+    rtmp_url = data.get("rtmp_url", "")
+    ffmpeg_path = data.get("ffmpeg_path", "ffmpeg")
+    rtmp_transport = data.get("rtmp_transport", "tcp")
 
     with _pipeline_lock:
         if _pipeline and _pipeline.is_running:
@@ -172,6 +187,7 @@ def handle_start(data):
             config.glossary_path = glossary_path
 
         _pipeline = RealTimeTranslationPipeline(config)
+        _rtmp_ingest = None
 
         try:
             if audio_mode == "browser":
@@ -193,19 +209,54 @@ def handle_start(data):
                     audio_source=audio_config,
                     caption_callback=_caption_to_browser,
                 )
+                _input_mode = "browser"
+            elif audio_mode == "rtmp":
+                if not rtmp_url:
+                    raise ValueError("RTMP URL is required when audio mode is rtmp")
+
+                import azure.cognitiveservices.speech as speechsdk
+
+                audio_format = speechsdk.audio.AudioStreamFormat(
+                    samples_per_second=16000,
+                    bits_per_sample=16,
+                    channels=1,
+                )
+                _push_stream = speechsdk.audio.PushAudioInputStream(
+                    stream_format=audio_format
+                )
+                audio_config = speechsdk.audio.AudioConfig(stream=_push_stream)
+
+                _rtmp_ingest = RtmpAudioIngest(
+                    rtmp_url=rtmp_url,
+                    push_stream=_push_stream,
+                    ffmpeg_path=ffmpeg_path,
+                    rtmp_transport=rtmp_transport,
+                )
+                _rtmp_ingest.start()
+                _pipeline.start(
+                    audio_source=audio_config,
+                    caption_callback=_caption_to_browser,
+                )
+                _input_mode = "rtmp"
             else:
                 # Use server's default microphone
                 _push_stream = None
                 _pipeline.start(caption_callback=_caption_to_browser)
+                _input_mode = "server_mic"
 
             emit("status", {
                 "message": f"Pipeline started: {direction} ({audio_mode})",
                 "running": True,
                 "direction": direction,
                 "audio_mode": audio_mode,
+                "rtmp": _rtmp_ingest.get_status() if _rtmp_ingest else None,
             })
         except Exception as e:
+            if _rtmp_ingest is not None:
+                _rtmp_ingest.stop()
+            _rtmp_ingest = None
             _push_stream = None
+            _input_mode = "idle"
             emit("pipeline_error", {"error": str(e)})
 
 
@@ -220,9 +271,16 @@ def handle_audio_data(data):
 @socketio.on("stop_pipeline")
 def handle_stop():
     """Stop the translation pipeline."""
-    global _pipeline, _push_stream
+    global _pipeline, _push_stream, _rtmp_ingest, _input_mode
 
     with _pipeline_lock:
+        if _rtmp_ingest is not None:
+            try:
+                _rtmp_ingest.stop()
+            except Exception:
+                pass
+            _rtmp_ingest = None
+
         if _push_stream is not None:
             try:
                 _push_stream.close()
@@ -232,8 +290,10 @@ def handle_stop():
 
         if _pipeline and _pipeline.is_running:
             _pipeline.stop()
+            _input_mode = "idle"
             emit("status", {"message": "Pipeline stopped", "running": False})
         else:
+            _input_mode = "idle"
             emit("status", {"message": "Pipeline not running", "running": False})
 
 
